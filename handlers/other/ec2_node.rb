@@ -55,6 +55,9 @@
 #   - AWS_SECRET_ACCESS_KEY
 #   - EC2_REGION
 #
+# If none of the settings are found it will then attempt to
+# generate temporary credentials from the IAM instance profile
+#
 #
 # To use, you can set it as the keepalive handler for a client:
 #   {
@@ -102,6 +105,7 @@ require 'timeout'
 require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-handler'
 require 'fog'
+require 'aws-sdk'
 
 class Ec2Node < Sensu::Handler
   def filter; end
@@ -133,14 +137,35 @@ class Ec2Node < Sensu::Handler
   end
 
   def ec2
-    @ec2 ||= begin
-      key = settings['aws']['access_key'] || ENV['AWS_ACCESS_KEY_ID']
-      secret = settings['aws']['secret_key'] || ENV['AWS_SECRET_ACCESS_KEY']
-      region = settings['aws']['region'] || ENV['EC2_REGION']
-      Fog::Compute.new(provider: 'AWS',
-                       aws_access_key_id: key,
-                       aws_secret_access_key: secret,
-                       region: region)
+    @ec2 = get_fog_aws_instance() if @ec2.nil? || Time.now >= @expiration
+  end
+
+  def get_fog_aws_instance
+    credentials = get_credentials()
+    @credential_expiration = credentials["expiration"]
+    Fog::Compute.new(provider: 'AWS',
+        aws_access_key_id: credentials["aws_access_key_id"],
+        aws_secret_access_key: credentials["aws_secret_access_key"],
+        region: credentials["region"])
+  end
+
+  def get_credentials
+    @credentials ||= begin
+        key = settings['aws']['access_key'] || ENV['AWS_ACCESS_KEY_ID']
+        secret = settings['aws']['secret_key'] || ENV['AWS_SECRET_ACCESS_KEY']
+        region = settings['aws']['region'] || ENV['EC2_REGION']
+        expiration = nil
+        if key.nil? || key.empty? || secret.nil? || secret.empty?
+            sts = AWS::STS.new()
+            session = sts.new_session()
+            key = session.credentials["access_key_id"]
+            secret = session.credentials["secret_access_key"]
+            expiration = session.expires_at
+        end
+        {"aws_access_key_id" => key,
+            "aws_secret_access_key" => secret,
+            "region" => region,
+            "expiration" => expiration}
     end
   end
 
