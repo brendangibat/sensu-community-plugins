@@ -1,6 +1,8 @@
 #!/usr/bin/env ruby
 #
 # CHANGELOG:
+# * 0.5.0:
+#   - Adds configuration to filter by state reason
 # * 0.4.0:
 #   - Adds ability to specify a list of states an individual client can have in
 #     EC2. If none is specified, it filters out 'terminated' and 'stopped'
@@ -21,6 +23,12 @@
 # This handler deletes a Sensu client if it's been stopped or terminated in EC2.
 # Optionally, you may specify a client attribute `ec2_states`, a list of valid
 # states an instance may have.
+#
+# You may also specify a client attribute `ec2_state_reasons`, a list of regular
+# expressions to match state reasons against. This is useful if you want to fail
+# on any `Client.*` state reason or on `Server.*` state reason. The default is
+# to match any state reason `.*` Regardless, eventually a client will be
+# deleted once AWS stops responding that the instance id exists.
 #
 # NOTE: The implementation for correlating Sensu clients to EC2 instances may
 # need to be modified to fit your organization. The current implementation
@@ -112,9 +120,11 @@ class Ec2Node < Sensu::Handler
     deletion_status(response)
   end
 
-  def ec2_node_exists?
+  def ec2_node_should_be_deleted?
     states = acquire_valid_states
-    filtered_instances = ec2.servers.select { |s| states.include?(s.state) }
+    state_reasons = acquire_valid_state_reasons
+    filtered_instances = ec2.servers.select { |s| states.include?(s.state)
+        && state_reasons.any?{ |reason| Regexp.new(reason) =~ s.state_reason["code"]}}
     instance_ids = filtered_instances.map(&:id)
     instance_ids.each do |id|
       return true if id == @event['client']['name']
@@ -152,6 +162,14 @@ class Ec2Node < Sensu::Handler
       return @event['client']['ec2_states']
     else
       return ['running']
+    end
+  end
+
+  def acquire_valid_state_reasons
+    if @event['client'].key?('ec2_state_reasons')
+      return @event['client']['ec2_state_reasons']
+    else
+      return ['.*']
     end
   end
 end
