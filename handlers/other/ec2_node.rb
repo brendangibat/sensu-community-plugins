@@ -34,7 +34,7 @@
 # need to be modified to fit your organization. The current implementation
 # assumes that Sensu clients' names are the same as their instance IDs in EC2.
 # If this is not the case, you can either sub-class this handler and override
-# `ec2_node_exists?` in your own organization-specific handler, or modify this
+# `ec2_node_should_be_deleted?` in your own organization-specific handler, or modify this
 # handler to suit your needs.
 #
 # Requires the following Rubygems (`gem install $GEM`):
@@ -112,7 +112,7 @@ class Ec2Node < Sensu::Handler
 
   def handle
     # #YELLOW
-    unless ec2_node_exists? # rubocop:disable UnlessElse
+    unless ec2_node_should_be_deleted? # rubocop:disable UnlessElse
       delete_sensu_client!
     else
       puts "[EC2 Node] #{@event['client']['name']} appears to exist in EC2"
