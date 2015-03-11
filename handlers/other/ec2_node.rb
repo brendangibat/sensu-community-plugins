@@ -44,15 +44,11 @@
 # Requires a Sensu configuration snippet:
 #   {
 #     "aws": {
-#       "access_key": "adsafdafda",
-#       "secret_key": "qwuieohajladsafhj23nm",
 #       "region": "us-east-1c"
 #     }
 #   }
 #
 # Or you can set the following environment variables:
-#   - AWS_ACCESS_KEY_ID
-#   - AWS_SECRET_ACCESS_KEY
 #   - EC2_REGION
 #
 # If none of the settings are found it will then attempt to
@@ -127,45 +123,24 @@ class Ec2Node < Sensu::Handler
   def ec2_node_should_be_deleted?
     states = acquire_valid_states
     state_reasons = acquire_valid_state_reasons
-    filtered_instances = ec2.servers.select { |s| states.include?(s.state) && state_reasons.any?{ |reason| Regexp.new(reason) =~ s.state_reason["code"]}}
-    instance_ids = filtered_instances.map(&:id)
-    instance_ids.each do |id|
-      return true if id == @event['client']['name']
+    instances = ec2.describe_instances(instance_ids: [@event['client']['name']])
+    if instances.any? && !instances.first.nil? && !instances.first.data.first.first.nil? && instances.first.first.any? && instances.first.data.first.first.instances.any?
+      instance = instances.first.data.first.first.instances.first
+      state_reason = instance.state_reason.code if !instance.state_reason.nil?
+      state_name = instance.state.name
+      return states.include?(state_name) && state_reasons.any?{ |reason| Regexp.new(reason) =~ state_reason}}
     end
-    false # no match found, node doesn't exist
+    # If this is used as a keep alive on warning or error then we should
+    # remove the node if it doesn't exist
+    return true
   end
 
   def ec2
-    @ec2 = get_fog_aws_instance() if @ec2.nil? || Time.now >= @expiration
+    @ec2 ||= Aws::EC2::Client.new(region: settings['aws']['region'] || ENV['EC2_REGION'])
   end
 
-  def get_fog_aws_instance
-    credentials = get_credentials()
-    @credential_expiration = credentials["expiration"]
-    Fog::Compute.new(provider: 'AWS',
-        aws_access_key_id: credentials["aws_access_key_id"],
-        aws_secret_access_key: credentials["aws_secret_access_key"],
-        region: credentials["region"])
-  end
-
-  def get_credentials
-    @credentials ||= begin
-        key = settings['aws']['access_key'] || ENV['AWS_ACCESS_KEY_ID']
-        secret = settings['aws']['secret_key'] || ENV['AWS_SECRET_ACCESS_KEY']
-        region = settings['aws']['region'] || ENV['EC2_REGION']
-        expiration = nil
-        if key.nil? || key.empty? || secret.nil? || secret.empty?
-            sts = AWS::STS.new()
-            session = sts.new_session()
-            key = session.credentials["access_key_id"]
-            secret = session.credentials["secret_access_key"]
-            expiration = session.expires_at
-        end
-        {"aws_access_key_id" => key,
-            "aws_secret_access_key" => secret,
-            "region" => region,
-            "expiration" => expiration}
-    end
+  def state_reasons
+    @state_reasons ||= acquire_valid_state_reasons.each { |reason| Regexp.new(reason)}
   end
 
   def deletion_status(code)
