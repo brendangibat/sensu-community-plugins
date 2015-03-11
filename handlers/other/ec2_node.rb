@@ -127,8 +127,7 @@ class Ec2Node < Sensu::Handler
   def ec2_node_should_be_deleted?
     states = acquire_valid_states
     state_reasons = acquire_valid_state_reasons
-    filtered_instances = ec2.servers.select { |s| states.include?(s.state)
-        && state_reasons.any?{ |reason| Regexp.new(reason) =~ s.state_reason["code"]}}
+    filtered_instances = ec2.servers.select { |s| states.include?(s.state) && state_reasons.any?{ |reason| Regexp.new(reason) =~ s.state_reason["code"]}}
     instance_ids = filtered_instances.map(&:id)
     instance_ids.each do |id|
       return true if id == @event['client']['name']
