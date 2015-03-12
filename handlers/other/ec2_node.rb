@@ -101,6 +101,8 @@ require 'timeout'
 require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-handler'
 require 'aws-sdk'
+require 'net/http'
+require 'uri'
 
 class Ec2Node < Sensu::Handler
   def filter; end
@@ -134,7 +136,21 @@ class Ec2Node < Sensu::Handler
   end
 
   def ec2
-    @ec2 ||= Aws::EC2::Client.new(region: settings['aws']['region'] || ENV['EC2_REGION'])
+    @ec2 ||= Aws::EC2::Client.new(region: get_region)
+  end
+
+  def get_region
+    @region ||= begin
+        region_check = settings['aws']['region'] || ENV['EC2_REGION']
+        if region_check.nil? || region_check.empty?
+            region_check = Net::HTTP.get(URI("http://169.254.169.254/latest/meta-data/placement/availability-zone"))
+            matches = /(\w+\-\w+\-\d+)/.match(region_check)
+            if !matches.nil? && !matches.capture.empty?
+                region_check = matches.capture[0]
+            end
+        end
+        region_check
+    end
   end
 
   def state_reasons
@@ -170,7 +186,3 @@ class Ec2Node < Sensu::Handler
     end
   end
 end
-
-test = Ec2Node.new
-test.event = {'client' => {'name' => "i-1bc624e7"}}
-test.handle
