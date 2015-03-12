@@ -100,7 +100,6 @@
 require 'timeout'
 require 'rubygems' if RUBY_VERSION < '1.9.0'
 require 'sensu-handler'
-require 'fog'
 require 'aws-sdk'
 
 class Ec2Node < Sensu::Handler
@@ -122,13 +121,12 @@ class Ec2Node < Sensu::Handler
 
   def ec2_node_should_be_deleted?
     states = acquire_valid_states
-    state_reasons = acquire_valid_state_reasons
     instances = ec2.describe_instances(instance_ids: [@event['client']['name']])
     if instances.any? && !instances.first.nil? && !instances.first.data.first.first.nil? && instances.first.first.any? && instances.first.data.first.first.instances.any?
       instance = instances.first.data.first.first.instances.first
       state_reason = instance.state_reason.code if !instance.state_reason.nil?
       state_name = instance.state.name
-      return states.include?(state_name) && state_reasons.any?{ |reason| Regexp.new(reason) =~ state_reason}}
+      return states.include?(state_name) && state_reasons.any?{ |reason| Regexp.new(reason) =~ state_reason}
     end
     # If this is used as a keep alive on warning or error then we should
     # remove the node if it doesn't exist
@@ -172,3 +170,7 @@ class Ec2Node < Sensu::Handler
     end
   end
 end
+
+test = Ec2Node.new
+test.event = {'client' => {'name' => "i-1bc624e7"}}
+test.handle
